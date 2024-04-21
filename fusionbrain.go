@@ -120,7 +120,7 @@ func NewFusionBrain(client *fasthttp.Client, key, secretKey string) *FusionBrain
 // You can check the current status in advance by using a GET request to URL /key/api/v1/text2image/availability.
 // During unavailability, tasks will not be accepted and in response to a request to the model,
 // instead of the uuid of your task, the current status of the service will be returned.
-func (f *FusionBrain) CheckAvailable(ctx context.Context) error {
+func (f *FusionBrain) CheckAvailable(ctx context.Context, modelID int) error {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	resp := fasthttp.AcquireResponse()
@@ -129,9 +129,22 @@ func (f *FusionBrain) CheckAvailable(ctx context.Context) error {
 	req.Header.SetMethod(fasthttp.MethodGet)
 	req.Header.Set(headerXKey, f.key)
 	req.Header.Set(headerXSecret, f.secretKey)
+	body := &bytes.Buffer{}
+	w := multipart.NewWriter(body)
+	modelIDPartHeader := textproto.MIMEHeader{}
+	modelIDPartHeader.Add("Content-Disposition", `form-data; name="`+formModelID+`"`)
+	modelIDPart, err := w.CreatePart(modelIDPartHeader)
+	if _, err = modelIDPart.Write([]byte(strconv.Itoa(modelID))); err != nil {
+		return err
+	}
+	if err = w.Close(); err != nil {
+		return err
+	}
+	req.Header.SetContentType(w.FormDataContentType())
+	req.SetBody(body.Bytes())
 	errChan := make(chan error, 1)
 	go func() {
-		if err := f.client.Do(req, resp); err != nil {
+		if err = f.client.Do(req, resp); err != nil {
 			errChan <- err
 			return
 		}
@@ -155,7 +168,7 @@ func (f *FusionBrain) CheckAvailable(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case err := <-errChan:
+	case err = <-errChan:
 		return err
 	}
 }
