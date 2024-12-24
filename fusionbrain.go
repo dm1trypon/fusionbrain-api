@@ -15,11 +15,11 @@ import (
 
 // The Fusion Brain API urls
 const (
-	urlGetModels       = "https://api-key.fusionbrain.ai/key/api/v1/models"
-	urlTextToImage     = "https://api-key.fusionbrain.ai/key/api/v1/text2image/run"
-	urlGetAvailability = "https://api-key.fusionbrain.ai/key/api/v1/text2image/availability"
-	urlGetCheckStatus  = "https://api-key.fusionbrain.ai/key/api/v1/text2image/status/"
-	urlGetStyles       = "https://cdn.fusionbrain.ai/static/styles/api"
+	uriGetModels       = "https://api-key.fusionbrain.ai/key/api/v1/models"
+	uriTextToImage     = "https://api-key.fusionbrain.ai/key/api/v1/text2image/run"
+	uriGetAvailability = "https://api-key.fusionbrain.ai/key/api/v1/text2image/availability"
+	uriGetCheckStatus  = "https://api-key.fusionbrain.ai/key/api/v1/text2image/status/"
+	uriGetStyles       = "https://cdn.fusionbrain.ai/static/styles/key"
 )
 
 // The Fusion Brain statuses
@@ -108,7 +108,7 @@ func NewFusionBrain(client *fasthttp.Client, key, secretKey string) *FusionBrain
 		secretKey: "Secret " + secretKey,
 		errsByRespCodes: map[int]error{
 			fasthttp.StatusUnauthorized:         errors.New("401 authorisation error"),
-			fasthttp.StatusNotFound:             errors.New("404 model not found"),
+			fasthttp.StatusNotFound:             errors.New("404 not found"),
 			fasthttp.StatusBadRequest:           errors.New("400 invalid request parameters or the text description is too long"),
 			fasthttp.StatusInternalServerError:  errors.New("500 server error when executing the request"),
 			fasthttp.StatusUnsupportedMediaType: errors.New("415 the content format is not supported by the server"),
@@ -125,7 +125,7 @@ func (f *FusionBrain) CheckAvailable(ctx context.Context, modelID int) error {
 	defer fasthttp.ReleaseRequest(req)
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-	req.SetRequestURI(urlGetAvailability)
+	req.SetRequestURI(uriGetAvailability)
 	req.Header.SetMethod(fasthttp.MethodGet)
 	req.Header.Set(headerXKey, f.key)
 	req.Header.Set(headerXSecret, f.secretKey)
@@ -134,6 +134,9 @@ func (f *FusionBrain) CheckAvailable(ctx context.Context, modelID int) error {
 	modelIDPartHeader := textproto.MIMEHeader{}
 	modelIDPartHeader.Add("Content-Disposition", `form-data; name="`+formModelID+`"`)
 	modelIDPart, err := w.CreatePart(modelIDPartHeader)
+	if err != nil {
+		return err
+	}
 	if _, err = modelIDPart.Write([]byte(strconv.Itoa(modelID))); err != nil {
 		return err
 	}
@@ -163,7 +166,6 @@ func (f *FusionBrain) CheckAvailable(ctx context.Context, modelID int) error {
 			return
 		}
 		errChan <- nil
-		return
 	}()
 	select {
 	case <-ctx.Done():
@@ -179,7 +181,7 @@ func (f *FusionBrain) GetModels(ctx context.Context) ([]Model, error) {
 	defer fasthttp.ReleaseRequest(req)
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-	req.SetRequestURI(urlGetModels)
+	req.SetRequestURI(uriGetModels)
 	req.Header.SetMethod(fasthttp.MethodGet)
 	req.Header.Set(headerXKey, f.key)
 	req.Header.Set(headerXSecret, f.secretKey)
@@ -212,7 +214,6 @@ func (f *FusionBrain) GetModels(ctx context.Context) ([]Model, error) {
 			models = append(models, model)
 		}
 		modelsChan <- models
-		return
 	}()
 	select {
 	case <-ctx.Done():
@@ -230,7 +231,7 @@ func (f *FusionBrain) GetStyles(ctx context.Context) ([]Style, error) {
 	defer fasthttp.ReleaseRequest(req)
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-	req.SetRequestURI(urlGetStyles)
+	req.SetRequestURI(uriGetStyles)
 	req.Header.SetMethod(fasthttp.MethodGet)
 	stylesChan := make(chan []Style, 1)
 	errChan := make(chan error, 1)
@@ -279,7 +280,7 @@ func (f *FusionBrain) TextToImage(ctx context.Context, reqBody RequestBody, mode
 	defer fasthttp.ReleaseRequest(req)
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-	req.SetRequestURI(urlTextToImage)
+	req.SetRequestURI(uriTextToImage)
 	req.Header.SetMethod(fasthttp.MethodPost)
 	req.Header.Set(headerXKey, f.key)
 	req.Header.Set(headerXSecret, f.secretKey)
@@ -289,12 +290,18 @@ func (f *FusionBrain) TextToImage(ctx context.Context, reqBody RequestBody, mode
 	paramsPartHeader.Add("Content-Disposition", `form-data; name="`+formParams+`"`)
 	paramsPartHeader.Add("Content-Type", "application/json")
 	paramsPart, err := w.CreatePart(paramsPartHeader)
+	if err != nil {
+		return "", err
+	}
 	if _, err = paramsPart.Write(reqBody.serialize()); err != nil {
 		return "", err
 	}
 	modelIDPartHeader := textproto.MIMEHeader{}
 	modelIDPartHeader.Add("Content-Disposition", `form-data; name="`+formModelID+`"`)
 	modelIDPart, err := w.CreatePart(modelIDPartHeader)
+	if err != nil {
+		return "", err
+	}
 	if _, err = modelIDPart.Write([]byte(strconv.Itoa(modelID))); err != nil {
 		return "", err
 	}
@@ -334,7 +341,6 @@ func (f *FusionBrain) TextToImage(ctx context.Context, reqBody RequestBody, mode
 			return
 		}
 		uuidChan <- uuid
-		return
 	}()
 	select {
 	case <-ctx.Done():
@@ -354,7 +360,7 @@ func (f *FusionBrain) CheckStatus(ctx context.Context, uuid string) (GenerationS
 	defer fasthttp.ReleaseRequest(req)
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-	req.SetRequestURI(urlGetCheckStatus + uuid)
+	req.SetRequestURI(uriGetCheckStatus + uuid)
 	req.Header.SetMethod(fasthttp.MethodGet)
 	req.Header.Set(headerXKey, f.key)
 	req.Header.Set(headerXSecret, f.secretKey)
@@ -389,7 +395,6 @@ func (f *FusionBrain) CheckStatus(ctx context.Context, uuid string) (GenerationS
 			ErrorDescription: string(v.GetStringBytes("errorDescription")),
 			Censored:         string(v.GetStringBytes("censored")),
 		}
-		return
 	}()
 	select {
 	case <-ctx.Done():
